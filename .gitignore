@@ -1,0 +1,10 @@
+data/raw/
+data/processed/
+data/cache/
+.venv/
+__pycache__/
+*.pyc
+profile/
+.env
+.env.*
+!.env.example
