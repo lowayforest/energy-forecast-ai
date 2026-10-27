@@ -1,0 +1,42 @@
+name: Solar Forecast CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: energy-forecast-ai-deploy
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t energy-forecast-ai:ci ./site/solar-forecast
+
+  deploy:
+    name: Deploy application
+    runs-on: ubuntu-latest
+    needs: validate
+    if: vars.DEPLOY_ENABLED == 'true'
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -eu
+            cd ~/app/energy-forecast-ai
+            git pull --ff-only
+            sudo docker compose up -d --build --wait --wait-timeout 120
+            sudo docker compose ps

@@ -67,3 +67,20 @@ npm run dev
 - 预测月累计：物理模型 **2,276.65 kWh**，豆包修正 **2,272.60 kWh**。这些是逐日预报之和；因为没有实绩，MAE、MAPE 和精度提升均**不可计算**。
 
 本地复现使用 `scripts/fetch_gfs.py --first 2024-01-01 --last 2024-01-31 --output-name gfs_jan2024.json --freeze-calibration-through 2023-12-30`，然后运行 `scripts/run_doubao_v2.py` 与 `scripts/build_future_demo.py`。相关结果缓存保存在被 Git 忽略的 `data/processed/`，前端展示数据见 `site/solar-forecast/src/future-data.json`。
+
+## Docker 与自动部署
+
+镜像在构建时编译 React 前端，再由非 root Nginx 提供静态页面。页面包含已生成的展示数据；容器不调用豆包 API，也不需要在服务器配置 `ARK_API_KEY`。容器只接入服务器已有的 `webnet` 网络，不开放宿主机端口。
+
+在服务器将仓库拉取到 `~/app/energy-forecast-ai` 后运行：
+
+```bash
+cd ~/app/energy-forecast-ai
+sudo docker compose config --quiet
+sudo docker compose up -d --build --wait --wait-timeout 120
+sudo docker compose ps
+```
+
+反向代理预置在相邻的 `reverse_proxy/nginx/conf.d/forecast.conf.disabled`，域名为 `forecast.a-void.cn`，指向 `solar-app:8080`。待 DNS 和正式证书就绪后，按 `reverse_proxy/README.md` 的证书同步流程启用 `forecast.conf`；不要把证书或私钥提交到 Git。
+
+GitHub Actions 在每次推送 `main` 时验证 Docker 构建。部署阶段受仓库变量 `DEPLOY_ENABLED` 控制：服务器完成首次拉取后，将该变量设为 `true`，再手动运行一次 `Solar Forecast CI/CD` 工作流；以后推送 `main` 会自动通过 SSH 更新容器。仓库 Actions Secrets 为 `SERVER_HOST`、`SERVER_USER`、`SERVER_PORT`、`SERVER_SSH_KEY`，使用此项目单独的部署密钥。部署目录与上面的服务器目录一致。
