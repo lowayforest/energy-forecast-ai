@@ -34,6 +34,14 @@ type Data = {
 const data = raw as Data
 const future = futureRaw as FutureData
 const fmt = (n: number | null | undefined, digits = 1) => n == null ? '—' : n.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+const navItems = [
+  { id: 'overview', icon: '◫', label: '预测概览' },
+  { id: 'daily', icon: '▥', label: '日度分析' },
+  { id: 'future', icon: '↗', label: '无实测新预测' },
+  { id: 'method', icon: '◇', label: '方法流程' },
+  { id: 'sources', icon: '☷', label: '数据来源' },
+] as const
+type NavSection = typeof navItems[number]['id']
 echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 function Chart({ setSelected }: { setSelected: (d: string) => void }) {
@@ -109,6 +117,37 @@ function FutureChart() {
 
 function App() {
   const [selected, setSelected] = useState(data.daily.at(-1)?.date || '')
+  const [activeSection, setActiveSection] = useState<NavSection>('overview')
+  const navLockUntil = useRef(0)
+  useEffect(() => {
+    const updateActiveSection = () => {
+      if (performance.now() < navLockUntil.current) return
+      const threshold = Math.min(window.innerHeight * 0.3, 220)
+      let current: NavSection = 'overview'
+      for (const item of navItems) {
+        const section = document.getElementById(item.id)
+        if (section && section.getBoundingClientRect().top <= threshold) current = item.id
+      }
+      if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4) current = 'sources'
+      setActiveSection(current)
+    }
+    const updateFromHash = () => {
+      const target = navItems.find(item => `#${item.id}` === window.location.hash)
+      if (target) {
+        navLockUntil.current = performance.now() + 1000
+        setActiveSection(target.id)
+      } else updateActiveSection()
+    }
+    updateFromHash()
+    window.addEventListener('scroll', updateActiveSection, { passive: true })
+    window.addEventListener('resize', updateActiveSection)
+    window.addEventListener('hashchange', updateFromHash)
+    return () => {
+      window.removeEventListener('scroll', updateActiveSection)
+      window.removeEventListener('resize', updateActiveSection)
+      window.removeEventListener('hashchange', updateFromHash)
+    }
+  }, [])
   const day = data.daily.find(d => d.date === selected) || data.daily.at(-1)
   const complete = data.metrics.completeMonth
   const aiReady = data.metrics.aiEvaluatedDays > 0
@@ -116,17 +155,13 @@ function App() {
     <aside className="sidebar">
       <div className="brand"><div className="brand-icon">✳</div><div><strong>SolarScope</strong><small>光伏预测实验平台</small></div></div>
       <div className="nav-caption">研究工作台</div>
-      <nav>
-        <a className="nav-item active" href="#overview"><span>◫</span> 预测概览</a>
-        <a className="nav-item" href="#daily"><span>▥</span> 日度分析</a>
-        <a className="nav-item" href="#future"><span>↗</span> 无实测新预测</a>
-        <a className="nav-item" href="#method"><span>◇</span> 方法流程</a>
-        <a className="nav-item" href="#sources"><span>☷</span> 数据来源</a>
+      <nav aria-label="页面导航">
+        {navItems.map(item => <a key={item.id} className={`nav-item${activeSection === item.id ? ' active' : ''}`} href={`#${item.id}`} onClick={() => { navLockUntil.current = performance.now() + 1000; setActiveSection(item.id) }} aria-current={activeSection === item.id ? 'location' : undefined}><span>{item.icon}</span> {item.label}</a>)}
       </nav>
       <div className="sidebar-bottom"><span className="live-dot" /> 公开数据研究演示 <small>验证站点 · HKUST SQ1</small></div>
     </aside>
     <main>
-      <header className="topbar"><div className="crumb">研究工作台 <span>/</span> 预测概览</div><div className="top-right"><span className="period-pill">◷ &nbsp;历史回测 + 数据集外预测</span><span className="avatar">光</span></div></header>
+      <header className="topbar"><div className="crumb">研究工作台 <span>/</span> {navItems.find(item => item.id === activeSection)?.label}</div><div className="top-right"><span className="period-pill">◷ &nbsp;历史回测 + 数据集外预测</span><span className="avatar">光</span></div></header>
       <div className="content">
         <section className="hero" id="overview"><div><div className="eyebrow"><span className="eyebrow-line" /> PHYSICS + AI FORECASTING</div><h1>光伏发电量预测<span className="headline-dot">.</span></h1><p>以已发布的天气预报驱动物理模型，结合豆包大模型修正，检验日发电量与月度累计表现。</p><div className="hero-tags"><span>● &nbsp;站点：HKUST SQ1</span><span>◉ &nbsp;额定功率：27.6 kW</span><span>▣ &nbsp;物理校准：2021–2022</span></div></div><div className="sun-graphic"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="sun-disc">☀</div><div className="solar-grid"/></div></section>
         <div className="notice"><span className="notice-icon">i</span><span>{data.meta.disclaimer}</span></div>
@@ -152,7 +187,7 @@ function App() {
         <section className="panel split-panel"><div className="panel-head"><div><span className="section-kicker">DATA SPLIT & LABELS</span><h2>数据划分与使用边界</h2><p>“训练集”在此指物理参数校准；豆包没有用 SQ1 数据微调。2023 年实测并未丢弃，而是按预测时点使用。</p></div></div><div className="split-table"><div className="split-row header"><span>用途</span><span>时间 / 数量</span><span>数据及作用</span></div><div className="split-row"><strong>物理参数校准</strong><span>2021-06—2022-12 · 572 有效日</span><span>HKUST SQ1 发电量与附近气象观测，拟合固定站点系数</span></div><div className="split-row"><strong>2023 年实测</strong><span>截至各预测时点已完成的日期</span><span>用于近 30 天滚动校正和豆包历史误差参考；目标日实绩不进入预测输入</span></div><div className="split-row"><strong>历史回测</strong><span>2023-08 · 31 日</span><span>前一日发布的 GFS 对目标日天气的预报驱动预测；目标日实绩仅在事后评分</span></div><div className="split-row"><strong>无实测预测</strong><span>2024-01 · 31 日</span><span>逐日 GFS 归档预报；物理站点校正冻结于 2023-12-30；无真实发电量</span></div><div className="split-row"><strong>豆包大模型</strong><span>Ark API · 未微调</span><span>读取当时可用的物理预测与历史误差，输出受限修正系数并保存到本地</span></div></div></section>
         <section className="method-section" id="method"><div className="section-heading"><div><span className="section-kicker">METHODOLOGY</span><h2>预测是怎样得到的</h2></div><span className="muted">物理模型 × 大模型修正</span></div><div className="method-grid">{data.method.map(item => <article className="method-card" key={item.step}><span className="method-num">{item.step}</span><h3>{item.title}</h3><p>{item.text}</p></article>)}</div><div className="method-foot"><b>物理模型说明</b><span>采用 pvlib 的简化 PVWatts 直流功率公式与 Ross 电池温度近似。因公开数据未给出 SQ1 可核实的组件倾角、方位角，历史拟合系数不能解释为纯系统损耗。8 月回测逐日使用预报发布时可用的近 30 天资料校正；2024 年 1 月因无站点新实绩，将校正系数冻结在 2023-12-30。两个月度卡片都是逐日预测之和。</span></div></section>
         <section className="panel source-panel" id="sources"><div className="panel-head"><div><span className="section-kicker">DATA PROVENANCE</span><h2>数据与方法来源</h2><p>每一项输入都标明来源和用途，便于复现。</p></div><span className="small-badge">{data.sources.length} 项来源</span></div><div className="source-list">{data.sources.map((source, i) => <a href={source.url} target="_blank" rel="noreferrer" className="source-row" key={source.name}><span className="source-index">0{i + 1}</span><span className="source-main"><strong>{source.name}</strong><small>{source.use}</small></span><span className="source-provider">{source.provider}</span><span className="external">↗</span></a>)}</div></section>
-        <footer><span>SolarScope · 光伏预测研究演示</span><span>公开数据回测 · 豆包模型：{data.meta.aiModel}</span></footer>
+        <footer><span>SolarScope · 光伏预测研究演示</span><span>公开数据回测 · 豆包模型：{data.meta.aiModel}</span><a className="icp-link" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">桂ICP备2025073900号-1</a></footer>
       </div>
     </main>
   </div>
