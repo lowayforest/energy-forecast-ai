@@ -44,6 +44,15 @@
 - **结果**：四站训练校准系数依次为 0.75732562、1.36628215、0.88630825、0.99456074。验证集 184 个站点日，整体 MAE 从 0.8142 降至 0.7802 等效满负荷小时，RMSE 从 1.0131 降至 0.9864 小时；**S-2 单站 MAE 从 0.9816 升至 1.0689 小时**。测试集 236 个站点日仅生成预测，未评分。
 - **局限**：缺少可核验的倾角、朝向和设备参数，GHI 近似及固定温度/效率参数会带来系统误差；系数不是纯损耗率。NWP 逐条发布时间仍不可核查。S-2 的验证退化表明固定站点系数有跨季节风险。
 
+## 2026-11-09：步骤 4，未微调本地大模型对照
+
+- **目的**：固定零样本提示词和验证协议，评估本地 `qwen3.5:9b` 在物理基线之上的实际效果；详细过程与逐站结果见[步骤 4 报告](research_zero_shot_ollama.md)。
+- **来源与配置**：[Qwen3.5-9B 上游模型卡](https://huggingface.co/Qwen/Qwen3.5-9B)、[Ollama 模型库](https://ollama.com/library/qwen3.5)、[Ollama 结构化输出说明](https://docs.ollama.com/capabilities/structured-outputs)；本机模型 digest `6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`。提示词为 `prompts/research_pv_zero_shot_v1.md`；`temperature=0`、`seed=42`、`think=false`、JSON Schema 输出。未进行训练或微调。
+- **关键公式**：$\widehat E_{s,d}^{\mathrm{LLM}}=C_s\widehat H_{s,d}^{\mathrm{LLM}}$（MW × h = MWh）；$\mathrm{MAE}=N^{-1}\sum_j|\widehat H_j-H_j|$，$\mathrm{RMSE}=\sqrt{N^{-1}\sum_j(\widehat H_j-H_j)^2}$。同日四站相关，改进区间按日期块 bootstrap 10,000 次计算；完整定义见步骤 4 报告。
+- **运行**：先 `.venv/bin/python scripts/evaluate_research_ollama.py --limit 4` 做格式试运行，再执行 `.venv/bin/python scripts/evaluate_research_ollama.py` 接续完成 184 条验证样本。运行文件、哈希、硬件和软件版本见步骤 4 报告；测试标签未访问。
+- **结果**：物理基线验证 MAE 0.7802 小时、RMSE 0.9864 小时；未微调大模型 MAE **0.7705** 小时、RMSE **0.9601** 小时。S-1、S-3 的 MAE 升高。日期块 bootstrap 的 MAE 改善 95% 区间 **[−0.004580, +0.023276] 小时**，跨零，不能声称稳定优于物理基线。184 条均有有效 JSON，无回退。
+- **局限**：只是一段验证期的零样本结果，改善幅度很小；物理基线的 GHI 近似误差仍在。尚未亲自训练模型，也未进行测试集最终评估。
+
 ## 后续步骤
 
-步骤 4：固定提示词和评估协议，先比较未微调的本地 9B 模型与物理基线，再决定 QLoRA 训练配置。每步在实验后登记真实结果；测试集等方案冻结后统一评分。
+步骤 5：在训练集设计物理残差微调样本，先做本机 QLoRA 可行性检查，再决定训练规模及对照；测试集仍保留到方案冻结后。
