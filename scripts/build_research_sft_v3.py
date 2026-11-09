@@ -8,6 +8,7 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
+from transformers import AutoTokenizer
 
 from audit_research_dataset import ROOT
 
@@ -16,7 +17,8 @@ OUT = ROOT / "data/processed/research"
 SOURCE_DIR = OUT / "sft_residual_v2"
 SFT_DIR = OUT / "sft_residual_v3"
 PROMPT = ROOT / "prompts/research_pv_residual_class_v3.md"
-PROMPT_SHA256 = "c0b9cc042eb7ef691b4146100462a0b871a0bcf8049a924ddae5fb0c76827b16"
+MODEL_DIR = ROOT / "data/cache/research/mlx_qwen35_9b_4bit"
+PROMPT_SHA256 = "4098a64de03d2bae1cd2b35307faee82022feca2715e5ff15dc806fd1436ee0c"
 SOURCE_SHA256 = {
     "manifest.json": "af247b7a720bb438cfcd28ac191b52e59d2854f69698653c89bf989110f6837b",
     "train.jsonl": "c5d7b572f5b7bc91922aa15729f103fe3fa72bb83d98f025489f4fa2877ac542",
@@ -65,6 +67,7 @@ def main() -> None:
     if not medians["A"] < medians["B"] < medians["C"]:
         raise ValueError("Invalid class representatives")
     SFT_DIR.mkdir(parents=True, exist_ok=True)
+    tokenizer = AutoTokenizer.from_pretrained(str(MODEL_DIR), local_files_only=True)
     manifest = {
         "task": "predict one-token residual class; probability-weighted train class medians give numeric correction",
         "source_v2_sha256": SOURCE_SHA256,
@@ -93,10 +96,23 @@ def main() -> None:
             labels.append(label)
         path = SFT_DIR / f"{split}.jsonl"
         path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in examples))
+        token_lengths = [
+            len(tokenizer.encode(
+                tokenizer.apply_chat_template(
+                    row["messages"], tokenize=False, add_generation_prompt=False,
+                    enable_thinking=False,
+                ),
+                add_special_tokens=False,
+            ))
+            for row in examples
+        ]
+        if max(token_lengths) > 400:
+            raise ValueError(f"{split}: token length exceeds 400-token memory guard")
         manifest["splits"][split] = {
             "rows": len(examples),
             "sha256": sha256(path),
             "class_counts": dict(Counter(labels)),
+            "max_tokens": max(token_lengths),
         }
     (SFT_DIR / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(manifest, ensure_ascii=False, indent=2))

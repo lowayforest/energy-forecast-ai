@@ -40,7 +40,7 @@ if manifest["test_status"] != "no test SFT file built":
     raise SystemExit("Unexpected test status")
 if sha256(Path("prompts/research_pv_residual_class_v3.md")) != manifest["prompt_sha256"]:
     raise SystemExit("V3 prompt hash mismatch")
-if manifest["prompt_sha256"] != "c0b9cc042eb7ef691b4146100462a0b871a0bcf8049a924ddae5fb0c76827b16":
+if manifest["prompt_sha256"] != "4098a64de03d2bae1cd2b35307faee82022feca2715e5ff15dc806fd1436ee0c":
     raise SystemExit("V3 prompt differs from preregistered version")
 for split, expected_rows in (("train", 890), ("valid", 184)):
     path = out / f"sft_residual_v3/{split}.jsonl"
@@ -48,6 +48,8 @@ for split, expected_rows in (("train", 890), ("valid", 184)):
         raise SystemExit(f"V3 {split} SFT hash mismatch")
     if manifest["splits"][split]["rows"] != expected_rows:
         raise SystemExit(f"V3 {split} count mismatch")
+    if manifest["splits"][split]["max_tokens"] > 400:
+        raise SystemExit(f"V3 {split} exceeds 400-token memory guard")
 print("V3 training inputs verified", flush=True)
 PY
 

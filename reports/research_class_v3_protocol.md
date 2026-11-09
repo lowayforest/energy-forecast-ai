@@ -10,7 +10,7 @@
 
 仍令 $r_{s,d}=H_{s,d}^{\mathrm{actual}}-H_{s,d}^{\mathrm{cond}}$。只用 **890 条训练残差**的三分位设置 A/B/C 边界：$q_{1/3}^{\mathrm{train}}=-0.39436667$ h、$q_{2/3}^{\mathrm{train}}=+0.32496667$ h，等于号归较低档。训练集三档样本数为 297/296/297；每档的训练残差**中位数**作为还原值，分别约为 **−0.8728、−0.0215、+0.8141 h**，精确值由脚本写入 manifest。验证标签只用于训练期间的语言损失计算和事后评分，不能参与边界或代表值的拟合。
 
-新提示词固定为 [`prompts/research_pv_residual_class_v3.md`](../prompts/research_pv_residual_class_v3.md)，SHA-256 `c0b9cc042eb7ef691b4146100462a0b871a0bcf8049a924ddae5fb0c76827b16`。模型只需生成 `A`、`B` 或 `C`；本机分词器检查这三个字母各是单个 token。推理时不贪心选一档，而从 assistant 首 token 的三档 logits 计算
+内存修订后的提示词固定为 [`prompts/research_pv_residual_class_v3.md`](../prompts/research_pv_residual_class_v3.md)，SHA-256 `4098a64de03d2bae1cd2b35307faee82022feca2715e5ff15dc806fd1436ee0c`。模型只需生成 `A`、`B` 或 `C`；本机分词器检查这三个字母各是单个 token。推理时不贪心选一档，而从 assistant 首 token 的三档 logits 计算
 
 $$p_k=\frac{e^{z_k}}{\sum_{j\in\{A,B,C\}}e^{z_j}},\qquad
 \widehat r_{s,d}=\sum_{k\in\{A,B,C\}}p_k\,\widetilde r_k,$$
@@ -26,7 +26,7 @@ $z_k$ 是类别 token 的下一 token logit，$\widetilde r_k$ 是训练集该�
 
 固定比较：条件物理、步骤 8 的数值残差 256 步 adapter、新分档任务的未微调 9B 基座、新分档任务的 890 步 adapter，以及原物理基线。整体和逐站报告 MAE、RMSE、平均偏差、回退数量；用 46 个日期块、10,000 次 bootstrap（种子 42）计算新 adapter 相对条件物理、新基座、旧 adapter 和原物理的 MAE 改善区间。**主要判据**是新 adapter 相对条件物理的 MAE 是否降低，并同时看日期块区间是否跨零。若只得到较低点估计但区间跨零，仅称探索性改善；若未降低，按实报告，不调参追逐当前验证集。
 
-## 用户运行与复核
+## 运行与复核
 
 在研究分支的项目根目录执行：
 
@@ -36,4 +36,6 @@ bash scripts/run_research_v3.sh
 
 [`scripts/run_research_v3.sh`](../scripts/run_research_v3.sh)先生成 A/B/C 样本，再运行 890 步训练、基座与 adapter 的验证预测、最后生成对照 JSON。日志和权重保存在 Git 忽略目录 `data/processed/research/`；训练成功会写入输入与 adapter 哈希的 provenance，重跑可接续已经完成的验证预测，部分训练目录会触发停止检查。依据前轮 256 步约 15 分钟的记录，本轮训练可能接近一小时，实际以本机日志为准。不要用包裹 shell 的 `/usr/bin/time -l` 输出当作 MLX 进程的可靠峰值内存。
 
-本方案提交前，只对脚本做语法检查、分词器聊天模板检查，以及**合成输入**上的基座前向传播：A/B/C token ID 分别为 32/33/34，assistant 生成前缀与训练模板一致，logits 形状和三类概率计算正常。训练样本按新模板编码后最长 459 tokens，低于 512 上限。**尚未运行本轮训练或验证评分**。用户运行结束后再由我核对哈希、指标与限制，补写结果报告；测试集在最终方案冻结前继续封存。
+原方案提交 `513172c` 后，首次运行在 **0/890** 步遇到 Metal `Insufficient Memory`；尚无有效训练结果。原提示词 SHA-256 为 `c0b9cc042eb7ef691b4146100462a0b871a0bcf8049a924ddae5fb0c76827b16`，样本最长 459 tokens，MLX 按 32-token 块补齐至 481；前轮可运行的 v2 样本最长 438、补齐至 449。失败日志保留在 `data/processed/research/logs/qlora_v3_890_failed_oom.log`，SHA-256 `76824517f03719791b2e5e117f75780991d165263a58babc31032a1b88336b06`，失败的 adapter 目录和 SFT 文件也已重命名保留。
+
+**只修改系统提示词的长度，不修改 A/B/C 边界、训练标签、模型结构、890 步训练、数值还原或主要比较判据。**缩短后的训练/验证样本最长均为 **386 tokens**，MLX 补齐至 417；构建脚本新增 **400-token 上限检查**。用最长训练样本与最长验证样本进行 1 步独立 QLoRA 内存试运行，成功完成反向传播和保存 adapter，日志为 `data/processed/research/logs/qlora_v3_memory_smoke.log`，SHA-256 `c0d118c83fd56a6977aa5d06c7c2df5f7d10b16847db798b4dbe00c35af4a415`。这只验证单步可运行，不能保证长训练一定成功或准确率改善。A/B/C token ID 仍为 32/33/34，合成输入前向传播正常。完整训练和验证评分将在本修订后运行；测试集继续封存。
