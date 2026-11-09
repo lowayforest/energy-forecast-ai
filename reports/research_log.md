@@ -35,12 +35,15 @@
 - **结果**：训练 890、验证 184、测试 236 条，共 1,310 条。输出为 `data/processed/research/daily_{train,valid,test}.jsonl` 和 `daily_manifest.json`；文件哈希、字段来源和划分日期见[步骤 2 报告](research_daily_dataset.md)。另逐条核验 1,310 个站点日不重复、历史日期恰为 $d-9$ 至 $d-3$，且 `inputs` 不含目标日发电标签，检查通过。
 - **局限**：逐条 NWP 运行时间仍不可从 CSV 独立核查；物理预测尚未计算。测试集保留给方案冻结后的最终评估。
 
+## 2026-11-09：步骤 3，建立物理预测基线
+
+- **目的**：给后续本地大模型实验提供可复现的预报天气驱动数值锚点，同时检查训练集站点校准是否能在未来日期有效。
+- **来源与方法**：详见[步骤 3 报告](research_physics_baseline.md)。使用 [Ross 温度模型](https://pvlib-python.readthedocs.io/en/stable/reference/generated/pvlib.temperature.ross.html)和 [PVWatts 直流功率模型](https://pvlib-python.readthedocs.io/en/stable/reference/generated/pvlib.pvsystem.pvwatts_dc.html)，以 NWP GHI 近似组件面辐照度；NOCT 45 °C、$\gamma=-0.004\,^{\circ}\mathrm C^{-1}$、逆变器效率 0.96 均为实验假设。
+- **关键公式**：$T_{\mathrm{cell}}=T_{\mathrm{air}}+(\mathrm{NOCT}-20)G/800$；$P_{\mathrm{dc}}=C_s(G/1000)[1+\gamma(T_{\mathrm{cell}}-25)]$；$E_{s,d}^{\mathrm{raw}}=0.25\sum_i\min(C_s,\max(0,0.96P_{\mathrm{dc},i}))$ MWh；$a_s=\operatorname{median}_{d\in\mathrm{train}}(E_{s,d}^{\mathrm{actual}}/E_{s,d}^{\mathrm{raw}})$，仅纳入原始预测至少 $0.1C_s$ MWh 的训练日。符号与单位完整定义见步骤 3 报告。
+- **运行**：`.venv/bin/python scripts/build_research_physics.py`；使用 `pvlib 0.16.1`、`numpy 2.5.4`、`pandas 3.1.0`。输出无标签物理预测 `physics_{train,valid,test}.jsonl` 和含参数、哈希、训练及验证评分的 `physics_manifest.json`，位于 Git 忽略目录 `data/processed/research/`。
+- **结果**：四站训练校准系数依次为 0.75732562、1.36628215、0.88630825、0.99456074。验证集 184 个站点日，整体 MAE 从 0.8142 降至 0.7802 等效满负荷小时，RMSE 从 1.0131 降至 0.9864 小时；**S-2 单站 MAE 从 0.9816 升至 1.0689 小时**。测试集 236 个站点日仅生成预测，未评分。
+- **局限**：缺少可核验的倾角、朝向和设备参数，GHI 近似及固定温度/效率参数会带来系统误差；系数不是纯损耗率。NWP 逐条发布时间仍不可核查。S-2 的验证退化表明固定站点系数有跨季节风险。
+
 ## 后续步骤
 
-步骤 3：确定河北站点的物理模型参数，只在训练集校准，并比较未校准与校准后的基线。随后做未微调模型与 QLoRA 微调模型的对照。未执行的步骤不写入实验结果。
-
-现有平台的物理基线采用 [Ross 温度模型](https://pvlib-python.readthedocs.io/en/stable/reference/generated/pvlib.temperature.ross.html)和 [PVWatts 直流功率模型](https://pvlib-python.readthedocs.io/en/stable/reference/generated/pvlib.pvsystem.pvwatts_dc.html)：
-
-$$T_{\mathrm{cell}}=T_{\mathrm{air}}+\frac{\mathrm{NOCT}-20}{800}G,\qquad P_{\mathrm{dc}}=P_{\mathrm{STC}}\frac{G}{1000}\left[1+\gamma(T_{\mathrm{cell}}-25)\right].$$
-
-这里 $G$ 的单位为 W/m²。现有香港演示用 GHI 近似组件面辐照度，并做经验系数校准；河北站点的参数与辐照度处理仍需单独确定，不能直接复用香港参数。
+步骤 4：固定提示词和评估协议，先比较未微调的本地 9B 模型与物理基线，再决定 QLoRA 训练配置。每步在实验后登记真实结果；测试集等方案冻结后统一评分。
