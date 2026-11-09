@@ -21,6 +21,7 @@ from audit_research_dataset import CAPACITY_MW, ROOT
 OUT = ROOT / "data/processed/research"
 MODEL_DIR = ROOT / "data/cache/research/mlx_qwen35_9b_4bit"
 ADAPTER_DIR = OUT / "adapters/qwen35_9b_residual_v1"
+ADAPTER_DIR_V2 = OUT / "adapters/qwen35_9b_residual_v2"
 SFT_VALID = OUT / "sft_residual_v1/valid.jsonl"
 DAILY_VALID = OUT / "daily_valid.jsonl"
 PHYSICS_VALID = OUT / "physics_valid.jsonl"
@@ -82,6 +83,7 @@ def metrics(rows: list[dict], actual_by_key: dict) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--variant", choices=("base", "adapter"), required=True)
+    parser.add_argument("--experiment", choices=("v1", "v2"), default="v1")
     parser.add_argument("--limit", type=int, help="Only generate first N rows; no metrics until complete")
     args = parser.parse_args()
     if args.limit is not None and args.limit <= 0:
@@ -91,31 +93,85 @@ def main() -> None:
     for name, expected in WEIGHT_SHA256.items():
         if sha256(MODEL_DIR / name) != expected:
             raise ValueError(f"Model weight hash mismatch: {name}")
-    for path, expected in (
-        (SFT_VALID, EXPECTED_SFT_SHA256),
-        (DAILY_VALID, EXPECTED_DAILY_SHA256),
-        (PHYSICS_VALID, EXPECTED_PHYSICS_SHA256),
-    ):
+    for path, expected in ((DAILY_VALID, EXPECTED_DAILY_SHA256), (PHYSICS_VALID, EXPECTED_PHYSICS_SHA256)):
         if sha256(path) != expected:
             raise ValueError(f"Input hash mismatch: {path}")
 
-    adapter_path = ADAPTER_DIR if args.variant == "adapter" else None
+    if args.experiment == "v1":
+        sft_valid = SFT_VALID
+        sft_sha256 = EXPECTED_SFT_SHA256
+        anchor_valid = PHYSICS_VALID
+        anchor_sha256 = EXPECTED_PHYSICS_SHA256
+        adapter_dir = ADAPTER_DIR
+        file_prefix = "mlx_"
+        conditional_manifest_sha256 = None
+    else:
+        conditional_manifest_path = OUT / "conditional_manifest.json"
+        conditional_manifest = json.loads(conditional_manifest_path.read_text())
+        if conditional_manifest["test_status"] != "not read or scored":
+            raise ValueError("Unexpected conditional test status")
+        if conditional_manifest["source_sha256"]["daily_valid.jsonl"] != EXPECTED_DAILY_SHA256:
+            raise ValueError("Conditional manifest refers to another daily validation dataset")
+        if conditional_manifest["source_sha256"]["physics_valid.jsonl"] != EXPECTED_PHYSICS_SHA256:
+            raise ValueError("Conditional manifest refers to another physical validation dataset")
+        conditional_manifest_sha256 = sha256(conditional_manifest_path)
+        anchor_valid = OUT / "conditional_valid.jsonl"
+        anchor_sha256 = conditional_manifest["predictions"]["valid"]["sha256"]
+        sft_manifest_path = OUT / "sft_residual_v2/manifest.json"
+        sft_manifest = json.loads(sft_manifest_path.read_text())
+        if sft_manifest["conditional_manifest_sha256"] != conditional_manifest_sha256:
+            raise ValueError("SFT was built from another conditional baseline")
+        if sft_manifest["test_status"] != "no test SFT file built":
+            raise ValueError("Unexpected SFT test status")
+        sft_valid = OUT / "sft_residual_v2/valid.jsonl"
+        sft_sha256 = sft_manifest["splits"]["valid"]["sha256"]
+        adapter_dir = ADAPTER_DIR_V2
+        file_prefix = "mlx_v2_"
+    for path, expected in ((sft_valid, sft_sha256), (anchor_valid, anchor_sha256)):
+        if sha256(path) != expected:
+            raise ValueError(f"Input hash mismatch: {path}")
+
+    adapter_path = adapter_dir if args.variant == "adapter" else None
     adapter_hash = sha256(adapter_path / "adapters.safetensors") if adapter_path else None
+    training_provenance_sha256 = None
+    if args.experiment == "v2" and adapter_path:
+        provenance_path = adapter_path / "training_provenance.json"
+        provenance = json.loads(provenance_path.read_text())
+        if provenance["status"] != "256 training updates completed successfully":
+            raise ValueError("V2 adapter training did not complete")
+        if provenance["sft_manifest_sha256"] != sha256(sft_manifest_path):
+            raise ValueError("V2 adapter was trained on another SFT dataset")
+        if provenance["adapter_sha256"] != adapter_hash:
+            raise ValueError("V2 adapter hash differs from training provenance")
+        if provenance["adapter_config_sha256"] != sha256(adapter_path / "adapter_config.json"):
+            raise ValueError("V2 adapter configuration changed")
+        training_provenance_sha256 = sha256(provenance_path)
     config = {
         "variant": args.variant,
         "model_revision": MODEL_REVISION,
         "weight_sha256": WEIGHT_SHA256,
-        "sft_valid_sha256": EXPECTED_SFT_SHA256,
+        "sft_valid_sha256": sft_sha256,
         "daily_valid_sha256": EXPECTED_DAILY_SHA256,
         "physics_valid_sha256": EXPECTED_PHYSICS_SHA256,
         "adapter_sha256": adapter_hash,
         "mlx_lm_version": version("mlx-lm"),
         "generation": {"temperature": 0, "max_tokens": MAX_TOKENS, "enable_thinking": False},
-        "invalid_output_policy": "fallback to zero residual (calibrated physical prediction)",
+        "invalid_output_policy": (
+            "fallback to zero residual (conditional physical prediction)"
+            if args.experiment == "v2" else "fallback to zero residual (calibrated physical prediction)"
+        ),
     }
+    if args.experiment == "v2":
+        config.update({
+            "experiment": "v2",
+            "conditional_manifest_sha256": conditional_manifest_sha256,
+            "conditional_valid_sha256": anchor_sha256,
+            "sft_manifest_sha256": sha256(sft_manifest_path),
+            "training_provenance_sha256": training_provenance_sha256,
+        })
     run_id = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
-    config_path = OUT / f"mlx_{args.variant}_valid_config.json"
-    prediction_path = OUT / f"mlx_{args.variant}_valid.jsonl"
+    config_path = OUT / f"{file_prefix}{args.variant}_valid_config.json"
+    prediction_path = OUT / f"{file_prefix}{args.variant}_valid.jsonl"
     expected_config = {**config, "run_id": run_id}
     if config_path.exists():
         if json.loads(config_path.read_text()) != expected_config:
@@ -126,8 +182,8 @@ def main() -> None:
         config_path.write_text(json.dumps(expected_config, ensure_ascii=False, indent=2) + "\n")
 
     daily = read_jsonl(DAILY_VALID)
-    physics = {key(row): row for row in read_jsonl(PHYSICS_VALID)}
-    sft = read_jsonl(SFT_VALID)
+    physics = {key(row): row for row in read_jsonl(anchor_valid)}
+    sft = read_jsonl(sft_valid)
     if len(daily) != len(sft) or len(physics) != len(daily):
         raise ValueError("Validation row count mismatch")
     actual_by_key = {key(row): row for row in daily}
@@ -140,6 +196,11 @@ def main() -> None:
         station_day = features["station"], features["target_date"]
         if station_day not in actual_by_key or station_day not in physics:
             raise ValueError("SFT/validation key mismatch")
+        if args.experiment == "v2" and abs(
+            features["physics_full_load_hours"]
+            - physics[station_day]["conditioned_physics_full_load_hours"]
+        ) > 1e-5:
+            raise ValueError("SFT physics anchor differs from conditional prediction")
         if "target" in features or any(name.startswith("lmd_") for name in features):
             raise ValueError("Target-day observations entered prompt")
         examples.append((features, messages[:2]))  # Never send assistant label to generation.
@@ -189,7 +250,7 @@ def main() -> None:
                 file.flush()
                 completed_keys.add(station_day)
                 print(
-                    f"{args.variant} {len(completed_keys)}/{len(examples)} "
+                    f"{args.experiment}/{args.variant} {len(completed_keys)}/{len(examples)} "
                     f"{features['station']} {features['target_date']} residual={residual:.4f}h "
                     f"time={elapsed:.2f}s" + (f" fallback={fallback}" if fallback else ""),
                     flush=True,
@@ -211,7 +272,9 @@ def main() -> None:
             },
             "prediction_sha256": sha256(prediction_path),
         }
-        (OUT / f"mlx_{args.variant}_valid_summary.json").write_text(
+        if args.experiment == "v2":
+            summary["experiment"] = "v2"
+        (OUT / f"{file_prefix}{args.variant}_valid_summary.json").write_text(
             json.dumps(summary, ensure_ascii=False, indent=2) + "\n"
         )
         print(json.dumps(summary, ensure_ascii=False, indent=2))
