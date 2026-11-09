@@ -13,7 +13,7 @@
 | [7] | Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., & Chen, W. (2022). “LoRA: Low-Rank Adaptation of Large Language Models.” *ICLR 2022*；[2021 年 arXiv 预印本](https://arxiv.org/abs/2106.09685). | 低秩 adapter 的方法依据，解释仅训练约 1.328 M 参数。 |
 | [8] | Dettmers, T., Pagnoni, A., Holtzman, A., & Zettlemoyer, L. (2023). “QLoRA: Efficient Finetuning of Quantized LLMs.” *NeurIPS 2023*. [会议论文页](https://proceedings.neurips.cc/paper_files/paper/2023/hash/1feb87871436031bdc0f2beaa62a049b-Abstract-Conference.html). | 量化基座上训练低秩 adapter 的方法动机。本文使用 MLX-LM 的量化 LoRA 实现，不声称复现 QLoRA 论文的全部量化/优化器细节。 |
 | [9] | Gruver, N., Finzi, M., Qiu, S., & Wilson, A. G. (2023). “Large Language Models Are Zero-Shot Time Series Forecasters.” [arXiv:2310.07820](https://arxiv.org/abs/2310.07820). | 数值文本分词和数值输出校准问题，为残差分档设计提供动机；不意味着该论文验证了本设计。 |
-| [10] | Jin, M., Wang, S., Ma, L., et al. (2023). “Time-LLM: Time Series Forecasting by Reprogramming Large Language Models.” [arXiv:2310.01728](https://arxiv.org/abs/2310.01728). | 时间序列与语言模型对齐的相关方向；本文并未使用 Time-LLM 架构。 |
+| [10] | Chen, T., & Guestrin, C. (2016). “XGBoost: A Scalable Tree Boosting System.” *Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining*, 785–794. [DOI: 10.1145/2939672.2939785](https://doi.org/10.1145/2939672.2939785). | 步骤 11 训练期滚动树模型对照的原始方法出处。 |
 | [11] | Ansari, A. F., Stella, L., Turkmen, C., et al. (2024). “Chronos: Learning the Language of Time Series.” [arXiv:2403.07815](https://arxiv.org/abs/2403.07815). | 时间序列离散化/量化为 token 的相关工作；本文 A/B/C 仅是残差分档，不等同于 Chronos。 |
 | [12] | Tan, M., Merrill, M. A., Gupta, V., Althoff, T., & Hartvigsen, T. (2024). “Are Language Models Actually Useful for Time Series Forecasting?” [arXiv:2406.16964](https://arxiv.org/abs/2406.16964). | 支持同时报告未微调基座与物理对照，避免把语言模型参与误写为已证明的预测贡献。 |
 | [13] | Qwen Team. (2026). “Qwen3.5: Towards Native Multimodal Agents.” [官方 Qwen3.5-9B 模型卡](https://huggingface.co/Qwen/Qwen3.5-9B). | 标注本文所用 9B 模型系列；本地量化版的具体权重 revision 与哈希另见实验日志。模型卡不是同行评审论文。 |
@@ -24,5 +24,5 @@
 
 - 数据与场景：[1]、[2]；日前预测背景：[3]、[4]。
 - 简化物理基线和实现：[5]、[6]；明确 GHI 代理阵列平面辐照度的误差来源。
-- 模型与数值表示：[7]—[13]；把支持方法选择的引用与本实验结果分开写。
+- 模型与数值表示：[7]—[9]、[11]—[13]；树模型对照：[10]。把支持方法选择的引用与本实验结果分开写。
 - 误差统计：[14]、[15]；区间跨零和重复使用验证集的局限须在结果讨论中说明。

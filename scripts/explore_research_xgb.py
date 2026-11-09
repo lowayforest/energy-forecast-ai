@@ -11,7 +11,7 @@ import numpy as np
 import xgboost as xgb
 
 from audit_research_dataset import CAPACITY_MW, ROOT
-from evaluate_research_mlx import metrics
+from compare_research_mlx import metrics
 
 
 OUT = ROOT / "data/processed/research"
