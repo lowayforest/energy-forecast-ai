@@ -53,6 +53,15 @@
 - **结果**：物理基线验证 MAE 0.7802 小时、RMSE 0.9864 小时；未微调大模型 MAE **0.7705** 小时、RMSE **0.9601** 小时。S-1、S-3 的 MAE 升高。日期块 bootstrap 的 MAE 改善 95% 区间 **[−0.004580, +0.023276] 小时**，跨零，不能声称稳定优于物理基线。184 条均有有效 JSON，无回退。
 - **局限**：只是一段验证期的零样本结果，改善幅度很小；物理基线的 GHI 近似误差仍在。尚未亲自训练模型，也未进行测试集最终评估。
 
+## 2026-11-09：步骤 5，物理残差样本与本机 QLoRA 试运行
+
+- **目的**：用训练集构建监督残差任务，验证 16 GB Apple M5 能否真正反向传播 9B 量化模型；详细过程见[步骤 5 报告](research_qlora_feasibility.md)。
+- **来源与方法**：[MLX-LM 微调文档](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md)、[Qwen3.5-9B-4bit 权重](https://huggingface.co/mlx-community/Qwen3.5-9B-4bit)、[LoRA 论文](https://arxiv.org/abs/2106.09685)、[QLoRA 论文](https://proceedings.neurips.cc/paper_files/paper/2023/hash/1feb87871436031bdc0f2beaa62a049b-Abstract.html)。固定权重 revision `8b2b98c00a6b4d291155e4890773ca8f769aee53`，两块权重 SHA-256 见报告。
+- **关键公式**：$r_{s,d}=H_{s,d}^{\mathrm{actual}}-E_{s,d}^{\mathrm{cal}}/C_s$（h）；$\widehat E_{s,d}=C_s\operatorname{clip}(E_{s,d}^{\mathrm{cal}}/C_s+\widehat r_{s,d},0,24)$（MWh）。LoRA 通过低秩矩阵学习冻结权重的增量，概念公式与符号见报告。
+- **运行**：`.venv/bin/python scripts/build_research_sft.py` 生成训练 890 条、验证 184 条聊天格式样本；无测试文件。安装 `mlx-lm[train] 0.32.2`、`mlx 0.32.4`。用前 16/8 条样本、512 token、batch 1、最后 2 层、秩 8、梯度检查点运行 **2 次参数更新**；完整命令与哈希见报告。
+- **结果**：样本最长 438 tokens，无截断。9B 模型两步训练成功，训练损失 1.938→1.741，保存 5.31 MB adapter；30 个张量均非零。另一次单步测得 macOS 进程峰值内存占用约 **11.93 GiB**、墙钟 **12.93 秒**、无交换。此结果仅证明短训练可执行，尚未评估微调后预测精度。
+- **局限**：长时间训练可能遇到内存或速度问题；短训练的损失下降不能作为泛化结论。MLX 与 Ollama 量化格式不同，未来须在同一 MLX 基座上做微调前后对照；测试集继续封存。
+
 ## 后续步骤
 
-步骤 5：在训练集设计物理残差微调样本，先做本机 QLoRA 可行性检查，再决定训练规模及对照；测试集仍保留到方案冻结后。
+步骤 6：同一 MLX 模型的未训练推理与正式训练，固定数值解析和验证评估；按验证结果选择配置，测试集暂不评分。
