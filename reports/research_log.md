@@ -27,9 +27,17 @@
 - **结果**：S-1 至 S-4 各有 302、348、348、348 个完整日，合计 **1,346 个站点日**；每个北京时间日 96 条、时间连续无重复、`power` 与 7 个 `nwp_*` 字段没有缺失。四站容量分别为 6.6、20、20、20 MW；功率范围没有超出对应容量。详细数字见[数据集调研报告](research_dataset_selection.md#第一步单位与时间审计)。
 - **局限**：整理 CSV 只有预报的目标时刻，没有逐条 NWP 运行时间。预报“提前可获得”的依据来自原论文，不能把逐条发布时间写成已由 CSV 验证。目标日的 `power`、`lmd_*` 只用于标签和评分，不进入当天预测输入。
 
+## 2026-11-09：步骤 2，按时间划分并生成每日样本
+
+- **目的**：为次日发电量任务建立输入与标签分离、按时间顺序切分的数据。
+- **方法与公式**：见[步骤 2 报告](research_daily_dataset.md)。以 $E_{s,d}=0.25\sum_{i\in d}P_{s,i}$（MWh）积分日发电量，以 $H_{s,d}=E_{s,d}/C_s$（小时）归一化不同容量站点；历史输入仅取 $d-9$ 至 $d-3$ 的 7 个完整日。
+- **运行**：`.venv/bin/python scripts/build_research_daily.py`。
+- **结果**：训练 890、验证 184、测试 236 条，共 1,310 条。输出为 `data/processed/research/daily_{train,valid,test}.jsonl` 和 `daily_manifest.json`；文件哈希、字段来源和划分日期见[步骤 2 报告](research_daily_dataset.md)。另逐条核验 1,310 个站点日不重复、历史日期恰为 $d-9$ 至 $d-3$，且 `inputs` 不含目标日发电标签，检查通过。
+- **局限**：逐条 NWP 运行时间仍不可从 CSV 独立核查；物理预测尚未计算。测试集保留给方案冻结后的最终评估。
+
 ## 后续步骤
 
-步骤 2：定义训练、验证、测试的时间边界，生成每日样本，并记录每个字段在预测时是否可获得。随后实现物理基线，再做未微调模型与 QLoRA 微调模型的对照。未执行的步骤不写入实验结果。
+步骤 3：确定河北站点的物理模型参数，只在训练集校准，并比较未校准与校准后的基线。随后做未微调模型与 QLoRA 微调模型的对照。未执行的步骤不写入实验结果。
 
 现有平台的物理基线采用 [Ross 温度模型](https://pvlib-python.readthedocs.io/en/stable/reference/generated/pvlib.temperature.ross.html)和 [PVWatts 直流功率模型](https://pvlib-python.readthedocs.io/en/stable/reference/generated/pvlib.pvsystem.pvwatts_dc.html)：
 
