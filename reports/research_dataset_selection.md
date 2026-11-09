@@ -6,7 +6,7 @@
 
 - [PVOD 原始数据与论文说明](https://github.com/yaotc/PVODataset)：中国河北的 10 个光伏电站，含 15 分钟功率实绩、现场气象观测和数值天气预报（NWP）。原作者说明仅供科研使用，并要求引用数据集论文。
 - [AI-PVOD 整理数据](https://huggingface.co/datasets/yujiaA/AI-PVOD)：论文作者整理的四个河北站点数据，可直接下载 `full_dataset.zip`。与原 PVOD 相比，已提供便于实验的 CSV；该压缩包并不包含完整的原始 10 站数据。配套[论文与代码](https://github.com/ZjuMachine/PV-power)说明了四站 NWP、功率和站点信息的使用方式。
-- [相关论文](https://pmc.ncbi.nlm.nih.gov/articles/PMC13424122/)列出四站额定容量及 NWP 字段。[原 PVOD 论文](https://doi.org/10.1016/j.solener.2021.09.050)描述 NWP 每日运行，取未来约 28–54 小时预报；因此比用目标日实测天气作为输入更适合日前预测。正式建模仍需核实每天采用的具体预报发布时间和功率单位。
+- [相关论文](https://pmc.ncbi.nlm.nih.gov/articles/PMC13424122/)列出四站额定容量及 NWP 字段。[原 PVOD 论文](https://doi.org/10.1016/j.solener.2021.09.050)描述 NWP 每日运行，取未来约 28–54 小时预报；因此比用目标日实测天气作为输入更适合日前预测。
 
 已下载 `full_dataset.zip` 到被 Git 忽略的 `data/raw/research/ai_pvod_full_dataset.zip`，SHA-256 为 `ba0639dc3c69c49b425f36877e5aa8f2923ca5d1fff6ca9a76a5aed17ba53383`。直接读取压缩包中的 CSV 核查结果：
 
@@ -18,6 +18,14 @@
 | S-4.csv | 2018-07-01 至 2019-06-13 | 348 | 33,408 | 0/0 |
 
 四站合计 1,346 个完整站点日。每个文件都有 `nwp_globalirrad`、`nwp_directirrad`、`nwp_temperature` 等预报字段、`power` 实绩字段，以及现场观测 `lmd_*` 字段。目标日的 `lmd_*` 和 `power` 只能用于事后评分，不能放入预测输入。Hugging Face 在线预览存在字段类型错误，但直接下载的 ZIP 可以正常读取。
+
+## 第一步：单位与时间审计
+
+运行 `.venv/bin/python scripts/audit_research_dataset.py`，脚本对四站检查了：15 分钟时间序列连续、无重复；`Time` 全部等于 `Timestamp`（UTC）加 8 小时；每个北京时间日都有 96 条记录；功率和 7 个 NWP 字段均无空值、非有限值，功率没有超出论文列出的额定容量。
+
+[原 PVOD 论文](https://doi.org/10.1016/j.solener.2021.09.050)把 `power` 定义为 **MW**，四站额定容量依次为 6.6、20、20、20 MW。因此每日发电量应按 `sum(15 分钟功率 MW × 0.25 小时)` 得到 **MWh**；若论文统一使用 kWh，再乘 1,000。四站平均每日发电量分别约为 19.93、88.26、63.08、69.04 MWh。
+
+**时间证据的边界**：原论文说明 NWP 是每天运行、未来 28–54 小时的预报；但整理后的 CSV 只有预报对应的目标时刻，没有逐条预报运行时间字段。论文可以据原始数据说明把这些 NWP 视作提前取得的天气输入，但不能声称已逐条验证其发布时间。训练输入只取目标日前已知的历史 `power`/`lmd_*`，以及目标日的 `nwp_*`。
 
 ## 其他选择
 
