@@ -21,6 +21,7 @@ from evaluate_research_mlx import metrics
 OUT = ROOT / "data/processed/research"
 MODEL_DIR = ROOT / "data/cache/research/mlx_qwen35_9b_4bit"
 ADAPTER_DIR = OUT / "adapters/qwen35_9b_residual_v3"
+ADAPTER_DIR_V4 = OUT / "adapters/qwen35_9b_class_only_v4"
 SFT_DIR = OUT / "sft_residual_v3"
 DAILY_VALID = OUT / "daily_valid.jsonl"
 CONDITIONAL_VALID = OUT / "conditional_valid.jsonl"
@@ -54,8 +55,11 @@ def key(row: dict) -> tuple[str, str]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--variant", choices=("base", "adapter"), required=True)
+    parser.add_argument("--run-tag", choices=("v3", "v4"), default="v3")
     parser.add_argument("--limit", type=int, help="Generate first N examples only; no metrics until all 184")
     args = parser.parse_args()
+    if args.run_tag == "v4" and args.variant != "adapter":
+        parser.error("v4 only needs the new adapter; the base is identical to v3")
     if args.limit is not None and args.limit <= 0:
         parser.error("--limit must be positive")
     if version("mlx-lm") != "0.32.2":
@@ -80,7 +84,7 @@ def main() -> None:
     if set(medians) != set(LABELS) or not medians["A"] < medians["B"] < medians["C"]:
         raise ValueError("Invalid class representatives")
 
-    adapter_path = ADAPTER_DIR if args.variant == "adapter" else None
+    adapter_path = (ADAPTER_DIR if args.run_tag == "v3" else ADAPTER_DIR_V4) if args.variant == "adapter" else None
     adapter_sha256 = sha256(adapter_path / "adapters.safetensors") if adapter_path else None
     provenance_sha256 = None
     if adapter_path:
@@ -94,6 +98,8 @@ def main() -> None:
             raise ValueError("V3 adapter hash mismatch")
         if provenance["adapter_config_sha256"] != sha256(adapter_path / "adapter_config.json"):
             raise ValueError("V3 adapter configuration changed")
+        if args.run_tag == "v4" and provenance.get("objective") != "single_class_token_only":
+            raise ValueError("V4 training objective mismatch")
         provenance_sha256 = sha256(provenance_path)
 
     model, tokenizer = load(str(MODEL_DIR), adapter_path=str(adapter_path) if adapter_path else None)
@@ -106,7 +112,7 @@ def main() -> None:
             raise ValueError(f"Class {label} is not a single token")
         class_token_ids.append(ids[0])
     config = {
-        "experiment": "v3_residual_class",
+        "experiment": f"{args.run_tag}_residual_class",
         "variant": args.variant,
         "model_revision": MODEL_REVISION,
         "weight_sha256": WEIGHT_SHA256,
@@ -123,8 +129,10 @@ def main() -> None:
         "decoding": "softmax over A/B/C next-token logits; probability-weighted training class medians",
         "invalid_output_policy": "zero residual (conditional physical forecast)",
     }
+    if args.run_tag == "v4":
+        config["training_objective"] = "single_class_token_only"
     run_id = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
-    prefix = f"mlx_v3_{args.variant}_valid"
+    prefix = f"mlx_{args.run_tag}_{args.variant}_valid"
     config_path = OUT / f"{prefix}_config.json"
     prediction_path = OUT / f"{prefix}.jsonl"
     expected_config = {**config, "run_id": run_id}
@@ -217,7 +225,7 @@ def main() -> None:
             file.write(json.dumps(record, ensure_ascii=False) + "\n")
             file.flush()
             completed_keys.add(station_day)
-            print(f"v3/{args.variant} {len(completed_keys)}/184 {station_day} correction={correction:.4f}h", flush=True)
+            print(f"{args.run_tag}/{args.variant} {len(completed_keys)}/184 {station_day} correction={correction:.4f}h", flush=True)
 
     predictions = read_jsonl(prediction_path)
     if len(predictions) == 184:
