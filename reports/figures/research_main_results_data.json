@@ -1,0 +1,32 @@
+{
+  "figure": "research_main_results",
+  "source_sha256": {
+    "mlx_v3_comparison_valid.json": "23aca494d19fbf5f0e14f7a387f3d2d5c1eb444751e6750803c86224bed434a9",
+    "v3_final_test_comparison.json": "fd5b64665b4943641646368f2de5b5c26d0a3b1127aea89c8313a99d502a79f6",
+    "daily_test.jsonl": "7fd4970581a695f2ef497017aab5065e7e0d5db3e9e737b5f971c060b97a14fe",
+    "conditional_test.jsonl": "8e28da04ae859ddc511f1e2ec4336e1e1ed4c7a36106f0a30a0012b8f16feb8d",
+    "mlx_v3_base_test.jsonl": "146fece212c4c24978c9d963a2d11c421f7cc6882e494c6a4b7b98b0c93441e5",
+    "mlx_v3_adapter_test.jsonl": "9b1e9d6832c0422922892517f1b771707080cc75e420291b26af1c55ee161702"
+  },
+  "validation_rows": 184,
+  "frozen_test_rows": 232,
+  "frozen_test_date_blocks": 58,
+  "base_vs_conditional_paired": {
+    "mean_mae_improvement_hours": 0.066251,
+    "bootstrap_95pct_interval_hours": [
+      0.031723,
+      0.099809
+    ],
+    "date_blocks": 58,
+    "bootstrap_draws": 10000,
+    "bootstrap_seed": 42,
+    "rows_better": 139,
+    "rows_worse": 93,
+    "dates_better": 35,
+    "dates_worse": 23
+  },
+  "software": {
+    "matplotlib": "3.11.2",
+    "numpy": "2.5.4"
+  }
+}
