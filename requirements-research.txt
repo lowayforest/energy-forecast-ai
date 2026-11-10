@@ -1,0 +1,9 @@
+numpy==2.5.4
+pandas==3.1.0
+pvlib==0.16.1
+matplotlib==3.11.2
+xgboost==3.4.1
+transformers==5.22.2
+huggingface-hub==2.4.0
+mlx==0.32.4; sys_platform == "darwin" and platform_machine == "arm64"
+mlx-lm[train]==0.32.2; sys_platform == "darwin" and platform_machine == "arm64"

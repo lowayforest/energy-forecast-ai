@@ -1,86 +1,87 @@
-# 光伏发电量预测演示
+# 物理模型与大语言模型结合的日前光伏发电量预测研究
 
-本仓库是申请书中“AI 大模型驱动的新能源出力预测”的缩小验证版：先针对单个公开屋顶光伏站点做**次日发电量**回测，再把逐日预测累加成月度回测值。申请书提出的多尺度时序建模、多任务协同预测、机理约束预训练和场景适配属于后续正式项目研究范围，本演示尚未实现。
+本仓库的 `research/ollama-pv-paper` 分支用于人工智能课程论文及本课题组**探索者计划项目**的光伏预测拓展研究。研究对象是河北四座公开光伏电站的**次日总发电量**：用数值天气预报驱动物理模型，再检验 9B 大语言模型能否修正剩余误差。线上日、月预测演示保留在 [`main` 分支](https://github.com/lowayforest/energy-forecast-ai/tree/main)；本分支记录论文、实验代码、方案和结果。
 
-## 当前结果
+论文终稿：[《物理模型与大语言模型结合的日前光伏发电量预测研究》](reports/research_paper_final.md) · [研究日志](reports/research_log.md) · [参考文献核查](reports/research_references.md)
 
-- 站点：HKUST 公开数据集 SQ1，位于中国香港，额定容量 27.6 kW；不是上海站点。
-- 历史数据：2021-06 至 2023-12 的 944 个有效日，其中 2021-06 至 2022-12 的 572 天用于固定站点系数校准。
-- 回测：2023 年 8 月 31 天，每天读取**前一日 00Z GFS 运行**的天气预报；用运行时已完整取得的近 30 天实际发电量与历史天气观测滚动校正，历史截止目标日前两日。
-- 这里的“前一日”是天气**预报的发布时间**；读取的是这次预报中对应**目标日白天**的辐照度和气温，而不是拿前一天的实测天气代替目标日天气。目标日实际发电量只用于事后评分。
-- 物理模型：pvlib 的简化 PVWatts 直流功率模型 + Ross 组件温度近似 + 逆变器效率假设；以历史记录拟合站点系数。组件倾角和方位角缺少可核实字段，GHI 暂作为有效辐照度近似，因此不是完整的组件平面辐照模型。
-- 大模型：`scripts/run_doubao.py` 使用火山引擎 Ark API 调用 `doubao-seed-2-1-pro-260915`，以物理预测、GFS 天气与目标日前历史发电量输出修正系数。31 天均已完成真实 API 调用；脚本仍在没有 API 密钥时拒绝生成 AI 预测。
-- 目前物理回测：8 月真实累计 3,762.8 kWh，物理逐日预测累计 3,837.9 kWh，日 MAE 29.35 kWh。这是单月、单站点结果，不说明泛化能力。
-- 豆包修正回测：预测累计 3,916.0 kWh，日 MAE 29.56 kWh，略高于物理基线。当前结果不能宣称大模型提高了精度；后续应在独立月份上调整修正策略并评估泛化性。
+![研究方法：天气预报、物理预测与大语言模型残差修正](reports/figures/research_method.png)
 
-## 运行
+## 研究问题与方法
 
-```bash
-uv venv .venv
-uv pip install --python .venv/bin/python pandas numpy pvlib httpx pydantic eccodes
-.venv/bin/python scripts/prepare_data.py
-.venv/bin/python scripts/fetch_gfs.py --first 2023-08-01 --last 2023-08-31
-```
+核心问题是：**在相同物理预测基础上，微调后的 9B 模型能否比未微调基座更准确地预测未来日期的日发电量？**
 
-将 `.env.example` 复制为仓库根目录的 `.env`，在 `.env` 中填入 `ARK_API_KEY=你的密钥`（不要把密钥发在聊天中）。`.env` 已被 Git 忽略。然后运行真实豆包调用：
+1. 将 15 分钟交流功率积分为日发电量；按额定容量换算为等效满负荷小时，以便比较不同容量的电站。
+2. 使用目标日数值天气预报（NWP）的辐照度和气温，经 Ross 组件温度模型与 PVWatts 功率近似得到物理预测；仅用训练期估计站点比例与高、低辐照度条件偏差。
+3. 用条件物理预测作锚点，把剩余误差分为 A/B/C 三档。Qwen3.5-9B 的四位量化模型通过 MLX-LM 训练 rank 8 LoRA；推理时以三档概率加权训练期残差中位数，恢复连续修正量。
+4. 对照原校准物理、条件物理、同权重未微调 9B 基座及 LoRA 模型；报告按日期划分的验证和测试结果。历史零样本、连续残差、类别损失消融及 XGBoost 探索也保留在研究记录中。
 
-```bash
-.venv/bin/python scripts/run_doubao.py
-.venv/bin/python scripts/build_demo.py
-cd site/solar-forecast
-npm install
-npm run dev
-```
+预测输入只使用目标日的 `nwp_*` 字段和目标日前 9 至 3 天的七个完整日历史发电量；目标日 `power` 和现场实测 `lmd_*` 只用于制作标签或事后分析。整理后的 CSV 缺少逐条 NWP **发布时间**，因此无法逐条核验固定日前时点的可用性，复现时应保留这一限制。
 
-请勿将密钥写入代码、提交到仓库或放进 React 前端。若仅查看物理模型演示，可跳过 `run_doubao.py`，直接运行 `build_demo.py`。
+## 数据与实验划分
 
-## 数据与方法来源
+- 数据：[PVOD 原始数据](https://github.com/yaotc/PVODataset)经 [AI-PVOD 整理的四站数据](https://huggingface.co/datasets/yujiaA/AI-PVOD/tree/main)，站点位于河北，容量分别为 6.6、20、20、20 MW；**没有使用上海场站数据**。
+- 从 1,346 个完整站点日构建 1,310 条带历史窗口的样本。按北京时间日期划分：训练 890 条（至 2019-02-28）、验证 184 条（2019-03-01 至 04-15）、测试 236 条（2019-04-16 至 06-13）。同一日期的四站不会跨集合。
+- 主测试评分排除曾在评分前意外看到一条标签的 **2019-04-16 整日四站**，使用之后 58 天、232 条样本；完整 236 条结果仅作补充。验证集经历多轮方法探索，后续消融也已查看旧测试集，不应把旧测试再次当作新独立评估。
+- 原始 ZIP、处理数据、模型权重、adapter 和日志均在 Git 忽略的 `data/` 下。数据与模型版本、校验值见[数据核查](reports/research_dataset_selection.md)、[逐日数据构造](reports/research_daily_dataset.md)、[模型及训练记录](reports/research_qlora_feasibility.md)。
 
-| 输入 | 用途 | 来源 |
-| --- | --- | --- |
-| HKUST 屋顶光伏公开数据 | SQ1 站点发电量、容量、坐标和历史气象观测 | [Dryad 原始数据](https://datadryad.org/dataset/doi:10.5061/dryad.m37pvmd99)；[Zenodo 镜像](https://zenodo.org/records/10909062) |
-| NOAA GFS 0.25° 预报归档 | 预测日前已发布的辐照度和 2 米气温预报 | [NOAA / AWS Open Data](https://registry.opendata.aws/noaa-gfs-bdp-pds/) |
-| PVWatts | 辐照度和温度到直流功率的物理计算 | [pvlib 文档](https://pvlib-python.readthedocs.io/en/stable/reference/generated/pvlib.pvsystem.pvwatts_dc.html) |
-| Ross 温度模型 | 从辐照度与环境温度近似组件温度 | [pvlib 文档](https://pvlib-python.readthedocs.io/en/stable/reference/generated/pvlib.temperature.ross.html) |
-| 豆包 Ark API | 对物理预测输出受限修正系数 | [火山引擎模型文档](https://docs.volcengine.com/docs/ark/model-list?lang=zh) |
+## 主要结果
 
-原始压缩包已下载在 `data/raw/hkust_rooftop_pv_2021_2023.zip`，大小约 296 MB；原始数据、GRIB 缓存和处理后的数据均被 `.gitignore` 排除。React 页面展示文件由 `scripts/build_demo.py` 生成。
+误差单位为**等效满负荷小时（h）**；具体站点的日发电量（MWh）由预测小时数乘以该站额定容量（MW）得到。下表为主测试期 232 条样本的既有、冻结方案结果：
 
-## 解释边界
+| 方法 | MAE（h） | RMSE（h） |
+| --- | ---: | ---: |
+| 原校准物理 | 1.0253 | 1.3507 |
+| 条件物理 | 0.8622 | 1.1376 |
+| 未微调 9B 基座 + 条件物理 | **0.7960** | **1.0441** |
+| LoRA 微调 9B + 条件物理 | 0.8437 | 1.1110 |
 
-1. 月度卡片是 31 个逐日次日预测结果的**累计回测**，不是月初一次性做出的整月预测。正式项目要做真正的月末前瞻预测，还需长期天气预报或季节预测及对应的误差评估。
-2. 2023 年的现场辐照与站点产出关系相对 2021–2022 年明显变化，所以演示加入只使用预报发布时已完整取得的近 30 天数据的自适应校正。这个系数不能被解释为单独的光伏损耗。
-3. 在拿到上海项目现场数据后，需要替换站点与气象输入，补齐组件倾角、方位角、实际可用率及限电等参数，再做跨月份、跨站点验证。当前结果不应当用作商业发电量承诺。
+LoRA 模型比条件物理的 MAE 低 0.0185 h，**但比未微调基座高 0.0477 h**。验证期 LoRA 的 MAE 为 0.6757 h，基座为 0.7035 h；这一排序没有保持到主测试期。结论是该实验尚未证明微调带来稳定增益，也不能据此声称适用于上海场站。逐站误差、成对日期块区间与失败原因见[最终测试记录](reports/research_final_test_results.md)和[论文讨论](reports/research_paper_final.md#5-讨论)。
 
-## 提示词实验
+![验证与主测试的误差、逐站结果和成对比较](reports/figures/research_main_results.png)
 
-另见[新版完整提示词](prompts/pv_correction_v2.md)与[三个月对照报告](reports/prompt_v2_experiment.md)。新版加入历史已发布预测的误差、相似辐照度比较和严格输出约束；10 月留出回测有小幅改善，但整体日预测精度收益尚不稳定。
+## 复现
 
-## 数据集外的无实测预测月
-
-演示平台另加了 **2024 年 1 月**：HKUST 公开数据中的 SQ1 发电实绩截止 2023-12-31，因此该月没有真实发电量可供评分。选择紧邻数据集的月份，可以沿用已知站点容量、近期状态和气象预报归档；比直接跳到 2026 年、却缺少中间数年电站运行信息更适合作为方法演示。
-
-- 天气输入：每天目标日前一日 00Z 的 NOAA GFS 归档预报，按当时信息重放；这**不是当前实时预报**。
-- 物理校正：统一冻结在 2023-12-30 可用的最近 30 天资料，1 月期间没有使用任何未提供的发电实绩。
-- 豆包：读取当时可用的 2023 年 12 月历史与天气预报，真实调用 31 次；历史资料变旧后优先保持物理基线。
-- 2023 年数据并未丢弃：8 月回测时按日期使用此前已完整取得的实测数据做滚动校正；预测 2024 年 1 月时使用 2023 年末的实测记录。固定站点系数只在 2021–2022 年拟合；2023 年用于按时间顺序回测和动态校正，并非完全不参与模型调整的独立测试集。豆包调用结果缓存于 `data/processed/doubao_predictions_v2_jan2024.json`，前端只展示整理后的预测值与解释。
-- 预测月累计：物理模型 **2,276.65 kWh**，豆包修正 **2,272.60 kWh**。这些是逐日预报之和；因为没有实绩，MAE、MAPE 和精度提升均**不可计算**。
-
-本地复现使用 `scripts/fetch_gfs.py --first 2024-01-01 --last 2024-01-31 --output-name gfs_jan2024.json --freeze-calibration-through 2023-12-30`，然后运行 `scripts/run_doubao_v2.py` 与 `scripts/build_future_demo.py`。相关结果缓存保存在被 Git 忽略的 `data/processed/`，前端展示数据见 `site/solar-forecast/src/future-data.json`。
-
-## Docker 与自动部署
-
-镜像在构建时编译 React 前端，再由非 root Nginx 提供静态页面。页面包含已生成的展示数据；容器不调用豆包 API，也不需要在服务器配置 `ARK_API_KEY`。容器只接入服务器已有的 `webnet` 网络，不开放宿主机端口。
-
-在服务器将仓库拉取到 `~/app/energy-forecast-ai` 后运行：
+实验使用 Python 3.12，模型训练与推理使用 Apple Silicon 上的 MLX-LM 0.32.2；`requirements-research.txt` 固定主要 Python 包版本。9B 权重和完整训练会占用较多内存，原实验设备为 16 GB Apple M5。XGBoost 在 macOS 上还需要系统提供 OpenMP 运行库。以下命令从仓库根目录执行：
 
 ```bash
-cd ~/app/energy-forecast-ai
-sudo docker compose config --quiet
-sudo docker compose up -d --build --wait --wait-timeout 120
-sudo docker compose ps
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -r requirements-research.txt
+mkdir -p data/raw/research
+curl -L --fail --retry 3 \
+  https://huggingface.co/datasets/yujiaA/AI-PVOD/resolve/main/full_dataset.zip \
+  -o data/raw/research/ai_pvod_full_dataset.zip
+shasum -a 256 data/raw/research/ai_pvod_full_dataset.zip
 ```
 
-线上地址为 <https://forecast.a-void.cn/>。反向代理配置在相邻的 `reverse_proxy/nginx/conf.d/forecast.conf`，指向 `solar-app:8080`。证书续期仍按 `reverse_proxy/README.md` 的本地同步流程操作；不要把证书或私钥提交到 Git。
+原始 ZIP 的预期 SHA-256 为 `ba0639dc3c69c49b425f36877e5aa8f2923ca5d1fff6ca9a76a5aed17ba53383`。核对后构造数据与物理基线：
 
-GitHub Actions 在每次推送 `main` 时验证 Docker 构建；仓库变量 `DEPLOY_ENABLED=true` 时，自动通过 SSH 更新容器。首次部署已完成，自动部署已启用。仓库 Actions Secrets 为 `SERVER_HOST`、`SERVER_USER`、`SERVER_PORT`、`SERVER_SSH_KEY`；服务器登录密钥按统一密钥方案配置。部署目录与上面的服务器目录一致。
+```bash
+.venv/bin/python scripts/audit_research_dataset.py
+.venv/bin/python scripts/build_research_daily.py
+.venv/bin/python scripts/build_research_physics.py
+.venv/bin/python scripts/build_research_conditional.py
+.venv/bin/python scripts/build_research_sft_v2.py
+```
+
+按[模型下载与权重校验记录](reports/research_qlora_feasibility.md#模型下载与样本长度)下载 `mlx-community/Qwen3.5-9B-4bit` 指定 revision 到 `data/cache/research/mlx_qwen35_9b_4bit/`，再运行：
+
+```bash
+bash scripts/run_research_v3.sh
+.venv/bin/python scripts/prepare_research_final_test.py
+.venv/bin/python scripts/evaluate_research_final_test.py --variant base
+.venv/bin/python scripts/evaluate_research_final_test.py --variant adapter
+.venv/bin/python scripts/score_research_final_test.py
+.venv/bin/python scripts/plot_research_main_results.py
+```
+
+`run_research_v3.sh` 只完成 v3 训练与**验证集**评估；后续命令才生成测试预测与评分。最终测试脚本会检查模型、输入与 adapter 的哈希，并支持已有预测的续跑。具体规则及执行顺序见[冻结测试方案](reports/research_final_test_protocol.md)。图 1 的代码是 `scripts/plot_research_method.py`，图 2 的代码是 `scripts/plot_research_main_results.py`。
+
+## 仓库内容
+
+- `reports/research_paper_final.md`：课程论文终稿，包含公式、方法、结果、局限和 15 条参考文献。
+- `reports/research_log.md` 与 `reports/research_*.md`：每步实验方案、数据校验、结果和后续数据需求。早期方案记录的是当时的计划；最终结论以论文和冻结测试报告为准。
+- `prompts/research_*.md`：零样本、连续残差及分档任务的提示词。
+- `scripts/*research*`：数据审计、物理预测、样本构造、训练、评分、分析和作图脚本。
+- `reports/figures/`：论文方法图、结果图及绘图数据；`data/` 为本地生成内容，不纳入版本控制。
+
+研究分支地址：<https://github.com/lowayforest/energy-forecast-ai/tree/research/ollama-pv-paper>。本研究是探索者计划项目的课程论文拓展，当前公开数据结果用于研究方法与误差；未来实际场站应用仍需可核验发布时间的天气预报、设备参数与独立的新时段数据。
