@@ -56,7 +56,7 @@ def panel_label(ax: plt.Axes, label: str) -> None:
 
 def draw_overall(ax: plt.Axes, scores: dict, title: str, letter: str) -> None:
     y_positions = np.arange(len(METHODS))[::-1]
-    ax.set_title(title, loc="left", pad=15, fontsize=10.5, fontweight="semibold")
+    ax.set_title(title, loc="left", pad=15, fontsize=10.5, fontweight="normal")
     panel_label(ax, letter)
     for method, y in zip(METHODS, y_positions):
         value = scores[method]["mae_hours"]
@@ -74,8 +74,8 @@ def draw_overall(ax: plt.Axes, scores: dict, title: str, letter: str) -> None:
 
 def draw_station(ax: plt.Axes, per_station: dict) -> None:
     panel_label(ax, "C")
-    ax.set_title("Frozen test by station", loc="left", pad=15,
-                 fontsize=10.5, fontweight="semibold")
+    ax.set_title("Test by station", loc="left", pad=15,
+                 fontsize=10.5, fontweight="normal")
     stations = ("S-1", "S-2", "S-3", "S-4")
     x = np.arange(len(stations))
     for method, marker, offset in (("conditional", "o", -0.12),
@@ -96,8 +96,8 @@ def draw_station(ax: plt.Axes, per_station: dict) -> None:
 
 def draw_paired(ax: plt.Axes, comparisons: list[tuple[str, dict, str]]) -> None:
     panel_label(ax, "D")
-    ax.set_title("Paired change on frozen test", loc="left", pad=15,
-                 fontsize=10.5, fontweight="semibold")
+    ax.set_title("Paired MAE reduction", loc="left", pad=15,
+                 fontsize=10.5, fontweight="normal")
     y_positions = np.arange(len(comparisons))[::-1]
     ax.axvline(0, color="#5A6570", lw=1.0)
     for (label, result, color), y in zip(comparisons, y_positions):
@@ -157,22 +157,16 @@ def main() -> None:
         "svg.fonttype": "none",
         "svg.hashsalt": "pv-paper-main-results-v1",
     })
-    fig = plt.figure(figsize=(11.8, 7.1), facecolor="white", layout="constrained")
+    fig = plt.figure(figsize=(11.8, 6.6), facecolor="white", layout="constrained")
     grid = fig.add_gridspec(2, 2, height_ratios=[1, 1.15], wspace=0.10, hspace=0.18)
     ax_valid = fig.add_subplot(grid[0, 0])
     ax_test = fig.add_subplot(grid[0, 1])
     ax_station = fig.add_subplot(grid[1, 0])
     ax_paired = fig.add_subplot(grid[1, 1])
-    draw_overall(ax_valid, valid_scores, "Validation · 46 dates / 184 station-days", "A")
-    draw_overall(ax_test, test["metrics"], "Frozen test · 58 dates / 232 station-days", "B")
+    draw_overall(ax_valid, valid_scores, "Validation (184 station-days)", "A")
+    draw_overall(ax_test, test["metrics"], "Test (232 station-days)", "B")
     draw_station(ax_station, test["per_station"])
     draw_paired(ax_paired, comparisons)
-    fig.suptitle("Physics-guided day-ahead PV energy forecasting",
-                 x=0.055, y=1.035, ha="left", fontsize=15, fontweight="semibold")
-    fig.text(0.055, -0.025,
-             "D: 95% date-block bootstrap intervals (10,000 draws). "
-             "One date was excluded before frozen-test scoring after an accidental label view.",
-             fontsize=8.3, color="#586572", ha="left")
     for ax in (ax_valid, ax_test, ax_station, ax_paired):
         for spine in ("top", "right"):
             ax.spines[spine].set_visible(False)
@@ -180,10 +174,13 @@ def main() -> None:
     stem = FIGURES / "research_main_results"
     fig.savefig(stem.with_suffix(".png"), dpi=300, bbox_inches="tight", pad_inches=0.15,
                 metadata={"Software": f"matplotlib {matplotlib.__version__}"})
-    fig.savefig(stem.with_suffix(".svg"), bbox_inches="tight", pad_inches=0.15,
+    svg_path = stem.with_suffix(".svg")
+    fig.savefig(svg_path, bbox_inches="tight", pad_inches=0.15,
                 metadata={"Date": None, "Creator": "plot_research_main_results.py"})
-    fig.savefig(stem.with_suffix(".pdf"), bbox_inches="tight", pad_inches=0.15,
-                metadata={"Title": "Physics-guided day-ahead PV energy forecasting"})
+    svg_path.write_text(
+        "\n".join(line.rstrip() for line in svg_path.read_text().splitlines()) + "\n"
+    )
+    fig.savefig(stem.with_suffix(".pdf"), bbox_inches="tight", pad_inches=0.15)
     plt.close(fig)
     manifest = {
         "figure": "research_main_results",

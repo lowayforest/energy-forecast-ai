@@ -1,4 +1,4 @@
-"""Draw the physics-guided 9B PV forecasting method as a vector figure."""
+"""Draw the paper's method as a compact, title-free vector diagram."""
 
 from __future__ import annotations
 
@@ -14,144 +14,152 @@ from audit_research_dataset import ROOT
 
 
 OUT = ROOT / "reports/figures"
-INK = "#253746"
-MUTED = "#5F6E7B"
-LINE = "#CCD6DD"
-BLUE = "#39799B"
-TEAL = "#188C86"
-ORANGE = "#C46B43"
-SLATE = "#71818E"
+INK = "#181818"
+TRAIN = "#666666"
+ACCENT = "#93AA2D"
+ACCENT_FILL = "#F2F6D9"
 
 
-def box(ax: plt.Axes, x: float, y: float, w: float, h: float,
-        title: str, lines: list[str], color: str, fill: str,
-        title_size: float = 10.2, body_size: float = 8.8) -> None:
-    patch = FancyBboxPatch((x, y), w, h,
-                           boxstyle="round,pad=0.02,rounding_size=0.13",
-                           linewidth=1.2, edgecolor=color, facecolor=fill)
-    ax.add_patch(patch)
-    ax.plot([x + 0.20, x + w - 0.20], [y + h - 0.55, y + h - 0.55],
-            color=color, lw=0.85, alpha=0.45)
-    ax.text(x + 0.20, y + h - 0.27, title, ha="left", va="center",
-            color=color, fontsize=title_size, fontweight="bold")
-    ax.text(x + 0.20, y + h - 0.77, "\n".join(lines),
-            ha="left", va="top", color=INK, fontsize=body_size,
-            linespacing=1.43)
+def block(
+    ax: plt.Axes,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    lines: tuple[str, ...],
+    *,
+    accent: bool = False,
+    sizes: tuple[float, ...] | None = None,
+) -> None:
+    ax.add_patch(
+        FancyBboxPatch(
+            (x, y), width, height,
+            boxstyle="round,pad=0.018,rounding_size=0.075",
+            facecolor=ACCENT_FILL if accent else "white",
+            edgecolor=ACCENT if accent else INK,
+            linewidth=1.35,
+        )
+    )
+    center_x = x + width / 2
+    center_y = y + height / 2
+    spacing = 0.37 if height > 1.45 else 0.34
+    for index, line in enumerate(lines):
+        ax.text(
+            center_x,
+            center_y + (len(lines) - 1 - 2 * index) * spacing / 2,
+            line,
+            ha="center",
+            va="center",
+            fontsize=sizes[index] if sizes else 10.5,
+            color=INK,
+        )
 
 
-def arrow(ax: plt.Axes, start: tuple[float, float], end: tuple[float, float],
-          color: str = SLATE, dashed: bool = False, width: float = 1.7) -> None:
-    patch = FancyArrowPatch(start, end, arrowstyle="-|>", mutation_scale=13,
-                            linewidth=width, color=color,
-                            linestyle=(0, (4, 3)) if dashed else "solid",
-                            shrinkA=0, shrinkB=0, connectionstyle="arc3")
-    ax.add_patch(patch)
+def arrow(
+    ax: plt.Axes,
+    start: tuple[float, float],
+    end: tuple[float, float],
+    *,
+    training: bool = False,
+) -> None:
+    ax.add_patch(
+        FancyArrowPatch(
+            start,
+            end,
+            arrowstyle="->",
+            mutation_scale=13,
+            linewidth=1.35 if training else 1.55,
+            color=TRAIN if training else INK,
+            linestyle=(0, (3.5, 3)) if training else "solid",
+            shrinkA=0,
+            shrinkB=0,
+            connectionstyle="arc3",
+        )
+    )
 
 
 def main() -> None:
     plt.rcParams.update({
         "font.family": "DejaVu Sans",
-        "font.size": 9,
+        "font.size": 10.5,
+        "mathtext.fontset": "stix",
         "text.color": INK,
         "pdf.fonttype": 42,
         "svg.fonttype": "none",
-        "svg.hashsalt": "pv-paper-method-v1",
+        "svg.hashsalt": "pv-paper-method-v2",
     })
-    fig, ax = plt.subplots(figsize=(14, 7.25), facecolor="white")
-    ax.set_xlim(0, 14)
-    ax.set_ylim(0, 7.25)
+    fig, ax = plt.subplots(figsize=(13.8, 5.55), facecolor="white")
+    ax.set_xlim(0, 13.8)
+    ax.set_ylim(0, 5.55)
     ax.axis("off")
 
-    ax.text(0.42, 7.02, "Physics-guided local 9B model for day-ahead PV energy",
-            fontsize=16, fontweight="bold", va="top")
-    ax.text(0.45, 6.47, "INFERENCE  ·  AVAILABLE BEFORE TARGET DAY d",
-            fontsize=9.4, fontweight="bold", color=BLUE, va="center")
-    ax.text(13.50, 6.47, "No target-day measurements in the prompt",
-            fontsize=8.7, color=MUTED, ha="right", va="center")
+    top_y, top_h = 3.10, 1.55
+    bottom_y, bottom_h = 0.65, 1.35
+    top_blocks = (
+        (0.40, 2.10, ("Target-day NWP", r"History $d-9$ to $d-3$")),
+        (2.90, 2.15, ("Ross + PVWatts", "Site / GHI calibration", r"$H^{\mathrm{cond}}$")),
+        (5.45, 2.25, ("Qwen3.5-9B",
+                      r"NWP, history, $H^{\mathrm{cond}}$",
+                      r"Base / LoRA; logits $z_k$")),
+        (8.10, 2.15, (r"Class probabilities $p_k$", r"$\hat r=\sum_k p_k\tilde r_k$")),
+        (10.65, 2.75, ("Day-ahead energy",
+                        r"$\hat H=\mathrm{clip}(H^{\mathrm{cond}}+\hat r,0,24)$",
+                        r"$\hat E=C\hat H$ (MWh)")),
+    )
+    for index, (x, width, lines) in enumerate(top_blocks):
+        block(
+            ax, x, top_y, width, top_h, lines,
+            accent=index == 2,
+            sizes=(10.5, 10.1, 10.5) if index == 4 else
+                  (10.5, 10.0, 9.8) if index == 2 else None,
+        )
 
-    top_y, top_h = 3.85, 2.25
-    box(ax, 0.45, top_y, 2.45, top_h, "01  Inputs", [
-        "Target-day NWP: irradiance,",
-        "temperature, wind, humidity",
-        "History: d−9 to d−3",
-    ], BLUE, "#F4F9FC")
-    box(ax, 3.15, top_y, 2.53, top_h, "02  Physics anchor", [
-        "Ross cell temperature",
-        "PVWatts DC approximation",
-        "Train-fitted site / GHI bias",
-        r"Output: $H^{\mathrm{cond}}$ (h)",
-    ], BLUE, "#F4F9FC")
-    box(ax, 5.93, top_y, 2.52, top_h, "03  Local 9B model", [
-        "Qwen3.5-9B, 4-bit",
-        "LoRA; base as control",
-        "Prompt: site, NWP, history",
-        r"Physics anchor $H^{\mathrm{cond}}$",
-    ], ORANGE, "#FFF8F4")
-    box(ax, 8.70, top_y, 2.13, top_h, "04  Decode", [
-        "A / B / C token logits",
-        "pₖ: restricted softmax",
-        "mₖ: train-class medians",
-    ], ORANGE, "#FFF8F4")
-    ax.text(8.90, 4.28, r"$\hat r=\sum_k p_km_k$",
-            ha="left", va="center", fontsize=10.0, color=INK)
-    box(ax, 11.08, top_y, 2.47, top_h, "05  Daily forecast", [
-        r"$\hat H=\mathrm{clip}(H^{\mathrm{cond}}+\hat r,0,24)$",
-        r"$\hat E=C\hat H$  (MWh)",
-        "Next-day site energy",
-    ], TEAL, "#F2FAF8", body_size=8.5)
+    mid_y = top_y + top_h / 2
+    for x0, x1 in ((2.52, 2.87), (5.07, 5.42), (7.72, 8.07), (10.27, 10.62)):
+        arrow(ax, (x0, mid_y), (x1, mid_y))
 
-    for start_x, end_x, color in ((2.91, 3.13, BLUE), (5.69, 5.91, BLUE),
-                                  (8.46, 8.68, ORANGE), (10.84, 11.06, TEAL)):
-        arrow(ax, (start_x, top_y + 1.10), (end_x, top_y + 1.10), color)
+    block(ax, 0.40, bottom_y, 2.10, bottom_h,
+          ("Observed AC power", r"$E^{\mathrm{actual}}$ (train / score)"),
+          sizes=(10.3, 9.9))
+    block(ax, 2.90, bottom_y, 2.15, bottom_h,
+          (r"$r=H^{\mathrm{actual}}-H^{\mathrm{cond}}$",
+           "Train terciles: A / B / C", r"Class medians $\tilde r_k$"),
+          sizes=(10.4, 10.0, 10.0))
+    block(ax, 5.45, bottom_y, 2.25, bottom_h,
+          ("LoRA adaptation", "Rank 8; final 2 layers", "890 training steps"),
+          sizes=(10.5, 9.8, 9.8))
+    block(ax, 10.65, bottom_y, 2.75, bottom_h,
+          ("Held-out scoring", "MAE / RMSE by date",
+           "Actual used after forecast"),
+          sizes=(10.5, 9.9, 9.9))
 
-    ax.plot([0.45, 13.55], [3.45, 3.45], color=LINE, lw=1)
-    ax.text(0.45, 3.18, "TRAINING & EVALUATION",
-            fontsize=9.4, fontweight="bold", color=SLATE, va="center")
-
-    lower_y, lower_h = 0.90, 1.95
-    box(ax, 0.45, lower_y, 2.45, lower_h, "Observed AC power", [
-        "Training-period actuals",
-        r"$H^{\mathrm{actual}}=E^{\mathrm{actual}}/C$",
-        "Never in inference prompt",
-    ], SLATE, "#F6F8FA", title_size=9.8, body_size=8.4)
-    box(ax, 3.15, lower_y, 2.95, lower_h, "Train-only residual labels", [
-        r"$r=H^{\mathrm{actual}}-H^{\mathrm{cond}}$",
-        "Train terciles → A / B / C",
-        "Train class medians → mₖ",
-    ], SLATE, "#F6F8FA", title_size=9.8, body_size=8.4)
-    box(ax, 6.35, lower_y, 2.48, lower_h, "Supervised adaptation", [
-        "890 training station-days",
-        "Rank 8; final 2 layers",
-        "890 updates; batch size 1",
-    ], ORANGE, "#FFF8F4", title_size=9.8, body_size=8.4)
-    box(ax, 10.15, lower_y, 3.40, lower_h, "Held-out scoring", [
-        "Actual energy used after prediction",
-        "MAE / RMSE; date-block intervals",
-        "Base model uses no LoRA adapter",
-    ], TEAL, "#F2FAF8", title_size=9.8, body_size=8.4)
-
-    arrow(ax, (2.91, lower_y + 0.99), (3.13, lower_y + 0.99), SLATE, dashed=True)
-    arrow(ax, (6.11, lower_y + 0.99), (6.33, lower_y + 0.99), ORANGE, dashed=True)
-    arrow(ax, (7.60, lower_y + lower_h + 0.02), (7.60, top_y - 0.03),
-          ORANGE, dashed=True)
-    arrow(ax, (12.31, top_y - 0.03), (12.31, lower_y + lower_h + 0.02),
-          TEAL, dashed=True)
-
-    ax.text(0.47, 0.42,
-            "All site calibration, GHI-band offsets, class thresholds and class medians are fitted on the training split only.",
-            fontsize=8.6, color=MUTED, va="center")
-    ax.text(13.54, 0.42, "Solid: inference    Dashed: training / scoring",
-            fontsize=8.6, color=MUTED, va="center", ha="right")
+    low_mid_y = bottom_y + bottom_h / 2
+    arrow(ax, (2.52, low_mid_y), (2.87, low_mid_y), training=True)
+    arrow(ax, (5.07, low_mid_y), (5.42, low_mid_y), training=True)
+    arrow(ax, (3.98, top_y - 0.03), (3.98, bottom_y + bottom_h + 0.03),
+          training=True)
+    arrow(ax, (6.58, bottom_y + bottom_h + 0.03), (6.58, top_y - 0.03),
+          training=True)
+    arrow(ax, (12.03, top_y - 0.03), (12.03, bottom_y + bottom_h + 0.03),
+          training=True)
 
     OUT.mkdir(parents=True, exist_ok=True)
     stem = OUT / "research_method"
-    fig.savefig(stem.with_suffix(".png"), dpi=300, bbox_inches="tight", pad_inches=0.18,
-                metadata={"Software": f"matplotlib {matplotlib.__version__}"})
-    fig.savefig(stem.with_suffix(".svg"), bbox_inches="tight", pad_inches=0.18,
-                metadata={"Date": None, "Creator": "plot_research_method.py"})
-    fig.savefig(stem.with_suffix(".pdf"), bbox_inches="tight", pad_inches=0.18,
-                metadata={"Title": "Physics-guided 9B PV forecasting method"})
+    fig.savefig(
+        stem.with_suffix(".png"), dpi=300, bbox_inches="tight", pad_inches=0.08,
+        metadata={"Software": f"matplotlib {matplotlib.__version__}"},
+    )
+    svg_path = stem.with_suffix(".svg")
+    fig.savefig(
+        svg_path, bbox_inches="tight", pad_inches=0.08,
+        metadata={"Date": None, "Creator": "plot_research_method.py"},
+    )
+    svg_path.write_text(
+        "\n".join(line.rstrip() for line in svg_path.read_text().splitlines()) + "\n"
+    )
+    fig.savefig(stem.with_suffix(".pdf"), bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
+
     metadata = {
         "figure": "research_method",
         "scope": "v3 LoRA inference with frozen base control; train-only fit and held-out score boundaries",
@@ -164,7 +172,8 @@ def main() -> None:
         "matplotlib_version": matplotlib.__version__,
     }
     (OUT / "research_method_data.json").write_text(
-        json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
+        json.dumps(metadata, ensure_ascii=False, indent=2) + "\n"
+    )
     print(json.dumps(metadata, ensure_ascii=False, indent=2))
 
 
