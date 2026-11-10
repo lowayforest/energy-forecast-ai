@@ -10,7 +10,9 @@
 
 复用步骤 9 已固定的 890 条训练、184 条验证 SFT，manifest SHA-256 `4da10cf8c060aa5e2465db1eac8a62e69055f83f761ea71ebdab45a19ac96f51`，提示词 SHA-256 `4098a64de03d2bae1cd2b35307faee82022feca2715e5ff15dc806fd1436ee0c`，量化基座两块权重哈希见步骤 9 方案。A/B/C 边界与训练组中位残差、输入特征、最后 2 层 rank 8 LoRA、batch 1、学习率 $10^{-5}$、最大 512 token、种子 42 和 **890 次更新**均不改；从相同基础权重重新训练，不从旧 adapter 继续。
 
-自定义 `ChatDataset.process`：用 `enable_thinking=False` 对 system/user 消息生成前缀，核验其与完整 system/user/assistant 序列的精确 token 前缀一致，再仅保留紧随其后的一个 A/B/C 类别 token，返回 `(prefix + label, len(prefix))`。`mlx-lm` 的 `default_loss` 对 `(offset, sequence_length]` 的目标位置计交叉熵，因此这一返回值应使每条样本**恰有一个受监督目标 token**。训练前对训练和验证全样本验证前缀、标签及受监督 token 数，保存哈希；若最长样本或内存不满足要求，先保留失败记录再处理。最终权重仍用第 890 步，不能事后选择中间检查点。
+自定义 `ChatDataset.process`：用 `enable_thinking=False` 对 system/user 消息生成前缀，核验其与完整 system/user/assistant 序列的精确 token 前缀一致，再仅保留紧随其后的一个 A/B/C 类别 token，返回 `(prefix + label, len(prefix))`。同时把 `mlx-lm` 训练入口的损失函数限定为 $\text{offset}\leq\text{step}<\text{sequence length}$。这使每条样本**恰有一个受监督目标 token**。训练前对训练和验证全样本验证前缀、标签及受监督 token 数，保存哈希；若最长样本或内存不满足要求，先保留失败记录再处理。最终权重仍用第 890 步，不能事后选择中间检查点。
+
+首次 1 步试运行揭示 `mlx-lm 0.32.2` 默认损失掩码的右端是**包含**序列长度的，因批次补齐会额外监督一个填充 token；试运行日志保留为 `qlora_v4_class_only_smoke_failed_pad_loss.log`，无完整训练结果。修订后的严格右端掩码先再次做 1 步试运行，确认损失只来自类别 token，再执行完整训练。这一修订发生在任何有效完整训练结果之前。
 
 ## 评价与边界
 
