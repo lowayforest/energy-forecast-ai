@@ -154,7 +154,11 @@ def main() -> None:
     report = {
         "status": "exploratory validation; old test not read or scored",
         "source_sha256": EXPECTED,
-        "protocol_sha256": sha256(ROOT / "reports/research_physics_slope_protocol.md"),
+        "protocol_sha256": (
+            sha256(ROOT / "reports/research_physics_slope_protocol.md")
+            if (ROOT / "reports/research_physics_slope_protocol.md").is_file()
+            else None
+        ),
         "folds": fold_results, "mean_fold_mae_hours": mean_scores,
         "selection_margin_hours": 0.01, "selected": selected_name,
         "model": {"scales": model["scales"], "threshold": model["threshold"],

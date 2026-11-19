@@ -8,3 +8,8 @@ profile/
 site/
 .env
 .env.*
+/reports/
+/document/
+/documents/
+*.doc
+*.docx

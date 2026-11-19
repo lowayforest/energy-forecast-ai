@@ -145,7 +145,11 @@ def main() -> None:
     report = {
         "status": "exploratory; test split not read or scored",
         "xgboost_version": xgb.__version__, "source_sha256": EXPECTED,
-        "protocol_sha256": sha256(ROOT / "reports/research_xgb_exploration_protocol.md"),
+        "protocol_sha256": (
+            sha256(ROOT / "reports/research_xgb_exploration_protocol.md")
+            if (ROOT / "reports/research_xgb_exploration_protocol.md").is_file()
+            else None
+        ),
         "feature_names": FEATURES, "rolling_candidates": results,
         "selected_configuration": chosen["configuration"],
         "model_sha256": sha256(model_path), "prediction_sha256": sha256(pred_path),

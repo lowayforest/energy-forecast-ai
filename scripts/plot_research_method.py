@@ -164,10 +164,10 @@ def main() -> None:
         "figure": "research_method",
         "scope": "v3 LoRA inference with frozen base control; train-only fit and held-out score boundaries",
         "method_sources": [
-            "reports/research_daily_dataset.md",
-            "reports/research_physics_baseline.md",
-            "reports/research_conditional_v2_results.md",
-            "reports/research_class_v3_protocol.md",
+            "scripts/build_research_daily.py",
+            "scripts/build_research_physics.py",
+            "scripts/build_research_conditional.py",
+            "scripts/build_research_sft_v3.py",
         ],
         "matplotlib_version": matplotlib.__version__,
     }
